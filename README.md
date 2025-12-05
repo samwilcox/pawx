@@ -1,2 +1,2 @@
 # pawx
-Cat themed programming language built on top of Rust.
+Cat themed programming language built on top of NodeJS.
