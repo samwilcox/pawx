@@ -1,0 +1,28 @@
+clowder Pet {
+    den _name = 'Unknown';
+    den _breed = 'Unknown';
+
+    get name -> {
+        return this._name;
+    }
+
+    set name -> (name) -> {
+        this._name = name;
+    }
+
+    get breed -> {
+        return this._breed;
+    }
+
+    set breed -> (breed) -> {
+        this._breed = breed;
+    }
+}
+
+snuggle pet = new Pet();
+
+pet.name = 'Trouble';
+pet.breed = 'Tabby';
+
+meow(pet.name);
+meow(pet.breed);

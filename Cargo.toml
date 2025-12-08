@@ -1,0 +1,9 @@
+[package]
+name = "pawx"
+version = "0.1.0"
+authors = ["Sam Wilcox"]
+edition = "2021"
+description = "Pawx programming language - Code with Claws"
+license = "MIT/APACHE 2"
+
+[dependencies]
