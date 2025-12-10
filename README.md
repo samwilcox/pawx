@@ -27,12 +27,12 @@
 **PAWX** is a fully custom-built programming language and runtime
 designed for:
 
--   ✅ Clean, expressive syntax\
--   ✅ Safe, sandboxed execution\
--   ✅ First-class functions & lambdas\
--   ✅ Objects, arrays, tuples, and classes\
--   ✅ Node.js-style filesystem API\
--   ✅ Promise-style async via `Furure`\
+-   ✅ Clean, expressive syntax
+-   ✅ Safe, sandboxed execution
+-   ✅ First-class functions & lambdas
+-   ✅ Objects, arrays, tuples, and classes
+-   ✅ Node.js-style filesystem API
+-   ✅ Promise-style async via `Furure`
 -   ✅ True interpreted execution
 
 ------------------------------------------------------------------------
@@ -103,26 +103,26 @@ Fs.writeTextAsync("./test.txt", "Async write!")
 
 ## 🧠 Under the Hood
 
--   Recursive-descent parser\
--   Strong AST typing\
--   Lexical scoping environment\
--   Prototype-based object model\
--   Class & instance system\
--   Thread-safe promise emulation\
+-   Recursive-descent parser
+-   Strong AST typing
+-   Lexical scoping environment
+-   Prototype-based object model
+-   Class & instance system
+-   Thread-safe promise emulation
 -   Native Rust function bridging
 
 ------------------------------------------------------------------------
 
 ## 📦 Project Status
 
-✅ Lexer & parser\
-✅ Expression evaluation\
-✅ Statements & control flow\
-✅ Functions & closures\
-✅ Classes & instances\
-✅ Arrays, objects, tuples\
-✅ Regex support\
-✅ Filesystem (sync + async)\
+✅ Lexer & parser
+✅ Expression evaluation
+✅ Statements & control flow
+✅ Functions & closures
+✅ Classes & instances
+✅ Arrays, objects, tuples
+✅ Regex support
+✅ Filesystem (sync + async)
 ✅ Promise-style Futures (`Furure`)
 
 ------------------------------------------------------------------------
@@ -139,7 +139,7 @@ pawx test.px
 
 PAWX is **dual-licensed** under:
 
--   MIT License\
+-   MIT License
 -   Apache License, Version 2.0
 
 https://license.pawx-lang.com
@@ -148,9 +148,9 @@ https://license.pawx-lang.com
 
 ## 👤 Author
 
-Sam Wilcox\
-https://www.pawx-lang.com\
-sam@pawx-lang.com\
+Sam Wilcox
+https://www.pawx-lang.com
+sam@pawx-lang.com
 https://github.com/samwilcox
 
 ------------------------------------------------------------------------
