@@ -1,34 +1,24 @@
-```{=html}
 <p align="center">
-```
-`<img src="./assets/pawx.png" alt="PAWX Logo" width="250" />`{=html}
-```{=html}
+  <img src="./assets/pawx.png" alt="PAWX Logo" width="250" />
 </p>
-```
-```{=html}
-<h1 align="center">
-```
-PAWX -- Code with Claws! 🐾
-```{=html}
-</h1>
-```
-```{=html}
+
+<h1 align="center">PAWX — Code with Claws! 🐾</h1>
+
 <p align="center">
-```
-`<a href="https://github.com/samwilcox/pawx">`{=html}`<img src="https://img.shields.io/github/stars/samwilcox/pawx?style=for-the-badge" />`{=html}`</a>`{=html}
-`<a href="https://github.com/samwilcox/pawx/blob/main/LICENSE">`{=html}`<img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue?style=for-the-badge" />`{=html}`</a>`{=html}
-`<a href="https://www.rust-lang.org">`{=html}`<img src="https://img.shields.io/badge/made%20with-Rust-orange?style=for-the-badge&logo=rust" />`{=html}`</a>`{=html}
-```{=html}
+  <a href="https://github.com/samwilcox/pawx">
+    <img src="https://img.shields.io/github/stars/samwilcox/pawx?style=for-the-badge" />
+  </a>
+  <a href="https://github.com/samwilcox/pawx/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue?style=for-the-badge" />
+  </a>
+  <a href="https://www.rust-lang.org">
+    <img src="https://img.shields.io/badge/made%20with-Rust-orange?style=for-the-badge&logo=rust" />
+  </a>
 </p>
-```
-```{=html}
+
 <p align="center">
-```
-A modern, expressive programming language built from scratch in
-`<b>`{=html}Rust`</b>`{=html}.
-```{=html}
+  A modern, expressive programming language built from scratch in <b>Rust</b>.
 </p>
-```
 
 ------------------------------------------------------------------------
 
