@@ -13,7 +13,7 @@
  * 
  * PAWX is dual-licensed under the terms of:
  *   - The MIT license
- *   - THe Apache License, Version 2.0
+ *   - The Apache License, Version 2.0
  * 
  * You may choose either license to govern your use of this software.
  * Full license text available at:
@@ -26,33 +26,17 @@
  * ==========================================================================
  */
 
-mod lexer;
-mod parser;
-mod ast;
-mod interpreter;
-mod value;
-mod error;
-mod prototypes;
+use crate::ast::Param;
 
-use std::env;
-use std::fs;
-
-fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 2 {
-        eprintln!("Usage: pawx <file.px>");
-        std::process::exit(1);
-    }
-
-    let source = fs::read_to_string(&args[1])
-        .expect("Failed to read Pawx source file");
-
-    run(&source);
+ #[derive(Debug, Clone)]
+pub enum InstinctMemberKind {
+    Method,      // ← THIS is what your parser expects
 }
 
-fn run(source: &str) {
-    let tokens = lexer::tokenize(source);
-    let ast = parser::parse(tokens);
-    interpreter::run(ast);
+#[derive(Debug, Clone)]
+pub struct InstinctMember {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub return_type: Option<String>,
+    pub kind: InstinctMemberKind,
 }

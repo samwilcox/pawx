@@ -1,28 +1,13 @@
-clowder Pet {
-    den _name = 'Unknown';
-    den _breed = 'Unknown';
+snuggle fileName = './test.txt';
 
-    get name -> {
-        return this._name;
-    }
-
-    set name -> (name) -> {
-        this._name = name;
-    }
-
-    get breed -> {
-        return this._breed;
-    }
-
-    set breed -> (breed) -> {
-        this._breed = breed;
-    }
-}
-
-snuggle pet = new Pet();
-
-pet.name = 'Trouble';
-pet.breed = 'Tabby';
-
-meow(pet.name);
-meow(pet.breed);
+Fs.writeTextAsync(fileName, 'Async write!')
+  .then(() -> {
+      meow('Write OK!');
+  })
+  .catch(err -> {
+      meow('Error!');
+      meow(err);
+  })
+  .finally(() -> {
+      meow('Cleanup done.');
+  });

@@ -7,3 +7,8 @@ description = "Pawx programming language - Code with Claws"
 license = "MIT/APACHE 2"
 
 [dependencies]
+rand = "0.8"
+chrono = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+regex = "1"

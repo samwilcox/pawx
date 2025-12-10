@@ -1,0 +1,20 @@
+exports default clowder Cat {
+    den _name;
+    den _breed;
+
+    get name -> {
+        return this._name;
+    }
+
+    set name -> (name) -> {
+        this._name = name;
+    }
+
+    get breed -> {
+        return this._breed;
+    }
+
+    set breed -> (breed) -> {
+        this._breed = breed;
+    }
+}

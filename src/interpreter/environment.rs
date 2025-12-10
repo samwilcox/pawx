@@ -1,32 +1,49 @@
 /*
- * ==========================================================================
- * PAWX - Code with Claws!
- * ==========================================================================
- * 
- * Author:   Sam Wilcox
- * Email:    sam@pawx-lang.com
- * Website:  https://www.pawx-lang.com
- * Github:   https://github.com/samwilcox/pawx
- * 
- * License:
- * This file is part of the PAWX programming language project.
- * 
- * PAWX is dual-licensed under the terms of:
- *   - The MIT license
- *   - The Apache License, Version 2.0
- * 
- * You may choose either license to govern your use of this software.
- * Full license text available at:
- *    https://license.pawx-lang.com
- * 
- * Unless required by applicable law or agreed to in writing, software
- * distributed under these licenses is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * 
- * ==========================================================================
+ * ============================================================================
+ *  PAWX - Code with Claws! 🐾
+ * ============================================================================
+ *
+ *  High-level Runtime / Core Module
+ *
+ *  This source file is part of the **PAWX Programming Language** — a scratch-
+ *  built, modern, dynamically-typed language focused on expressiveness,
+ *  safety, and extensibility.
+ *
+ *  PAWX is designed and implemented as a full-stack language system including:
+ *   - Lexer & Parser
+ *   - Abstract Syntax Tree (AST)
+ *   - Bytecode-free Interpreter
+ *   - Prototype-based Object System
+ *   - Async Timers & Runtime Primitives
+ *
+ *  --------------------------------------------------------------------------
+ *  Author
+ *  --------------------------------------------------------------------------
+ *  Author:   Sam Wilcox
+ *  Email:    sam@pawx-lang.com
+ *  Website:  https://www.pawx-lang.com
+ *  GitHub:   https://github.com/samwilcox/pawx
+ *
+ *  --------------------------------------------------------------------------
+ *  License
+ *  --------------------------------------------------------------------------
+ *  This file is part of the PAWX programming language project.
+ *
+ *  PAWX is dual-licensed under the terms of:
+ *    • The MIT License
+ *    • The Apache License, Version 2.0
+ *
+ *  You may choose either license to govern your use of this software.
+ *
+ *  Full license text available at:
+ *     https://license.pawx-lang.com
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under these licenses is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *
+ * ============================================================================
  */
-
-#![allow(dead_code, unused_variables, unused_imports)]
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -61,6 +78,7 @@ pub struct Environment {
     pub values: HashMap<String, EnvEntry>,
     pub functions: HashMap<String, FunctionDef>,
     parent: Option<Rc<RefCell<Environment>>>,
+    pub timers: HashMap<u64, Value>,
 }
 
 impl Environment {
@@ -68,6 +86,7 @@ impl Environment {
         Self {
             values: HashMap::new(),
             functions: HashMap::new(),
+            timers: HashMap::new(),   // ✅ REQUIRED FIX
             parent,
         }
     }

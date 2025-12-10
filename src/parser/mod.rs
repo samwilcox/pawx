@@ -3,6 +3,15 @@
  * PAWX - Code with Claws!
  * ==========================================================================
  * 
+ * File:     parser/mod.rs
+ * Purpose:  Root module for the PAWX recursive-descent parser.
+ * 
+ * This module wires together all parser sub-modules, including:
+ *   - Core parser control logic
+ *   - Statement parsing
+ *   - Expression parsing
+ *   - Shared helper utilities
+ * 
  * Author:   Sam Wilcox
  * Email:    sam@pawx-lang.com
  * Website:  https://www.pawx-lang.com
@@ -26,18 +35,29 @@
  * ==========================================================================
  */
 
- #![allow(dead_code, unused_variables, unused_imports)]
-
-pub mod lexer;
+/// Core parser orchestration:
+/// - Owns the `Parser` struct
+/// - Exposes the main `parse(tokens)` entry point
 pub mod parser;
-pub mod ast;
-pub mod interpreter;
-pub mod value;
-pub mod error;
-pub mod prototypes;
 
-pub fn run(source: &str) {
-    let tokens = lexer::tokenize(source);
-    let ast = parser::parse(tokens);
-    interpreter::run(ast);
-}
+/// Statement-level parsing:
+/// - if / while / return / try / throw
+/// - clowder / instinct
+/// - variable declarations
+pub mod statements;
+
+/// Expression-level parsing:
+/// - assignment → equality → comparison → term → factor → unary → call → primary
+/// - lambdas, arrays, objects, indexing, calls, etc.
+pub mod expressions;
+
+/// Shared parser helpers:
+/// - token matching
+/// - lookahead checks
+/// - symbol consumption
+/// - arrow handling
+pub mod helpers;
+
+/// Re-export the public parse entry point so callers can use:
+/// `crate::parser::parse(...)`
+pub use parser::parse;
