@@ -115,14 +115,14 @@ Fs.writeTextAsync("./test.txt", "Async write!")
 
 ## 📦 Project Status
 
-✅ Lexer & parser
-✅ Expression evaluation
-✅ Statements & control flow
-✅ Functions & closures
-✅ Classes & instances
-✅ Arrays, objects, tuples
-✅ Regex support
-✅ Filesystem (sync + async)
+✅ Lexer & parser\
+✅ Expression evaluation\
+✅ Statements & control flow\
+✅ Functions & closures\
+✅ Classes & instances\
+✅ Arrays, objects, tuples\
+✅ Regex support\
+✅ Filesystem (sync + async)\
 ✅ Promise-style Futures (`Furure`)
 
 ------------------------------------------------------------------------
