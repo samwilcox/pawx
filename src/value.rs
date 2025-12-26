@@ -2,27 +2,27 @@
  * ==========================================================================
  * PAWX - Code with Claws!
  * ==========================================================================
- * 
+ *
  * Author:   Sam Wilcox
  * Email:    sam@pawx-lang.com
  * Website:  https://www.pawx-lang.com
  * Github:   https://github.com/samwilcox/pawx
- * 
+ *
  * License:
  * This file is part of the PAWX programming language project.
- * 
+ *
  * PAWX is dual-licensed under the terms of:
  *   - The MIT license
  *   - The Apache License, Version 2.0
- * 
+ *
  * You may choose either license to govern your use of this software.
  * Full license text available at:
  *    https://license.pawx-lang.com
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under these licenses is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * 
+ *
  * ==========================================================================
  */
 
@@ -33,6 +33,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
+
 use regex::Regex;
 
 use crate::interpreter::environment::FunctionDef;
@@ -62,15 +63,11 @@ pub enum Value {
 
     // Pride / object literal / plain object:
     // - Shared mutable field map
-    // - Used for:
-    //   * { ... } literals
-    //   * Pride results
     Object {
         fields: Rc<RefCell<HashMap<String, Value>>>,
     },
 
     // Class definition:
-    // - Contains methods, getters, setters, and default fields
     Class {
         name: String,
         methods: HashMap<String, FunctionDef>,
@@ -80,8 +77,6 @@ pub enum Value {
     },
 
     // Instance of a class:
-    // - Shared fields (Rc<RefCell<_>>) so mutation is visible everywhere
-    // - Methods/getters/setters copied from class at creation time
     Instance {
         class_name: String,
         fields: Rc<RefCell<HashMap<String, Value>>>,
@@ -99,8 +94,6 @@ pub enum Value {
     },
 
     // Module value produced by tap()
-    // - exports: named exports
-    // - default: optional default export
     Module {
         exports: HashMap<String, Value>,
         default: Option<Box<Value>>,
@@ -109,7 +102,8 @@ pub enum Value {
     // Tuple literal
     Tuple(Vec<Value>),
 
-    Regex(regex::Regex),
+    // Regex literal / constructed regex
+    Regex(Regex),
 }
 
 impl Clone for Value {
@@ -120,24 +114,17 @@ impl Clone for Value {
             Value::Bool(b) => Value::Bool(*b),
             Value::Null => Value::Null,
 
-            // Native function: clone the Arc handle
             Value::NativeFunction(f) => Value::NativeFunction(f.clone()),
 
-            // Regex: regex::Regex is already cloneable
-            Value::Regex(r) => Value::Regex(r.clone()),
-
-            // Shared object fields
-            Value::Object { fields } => Value::Object {
-                fields: fields.clone(),
-            },
-
-            // Shared array values, cloned proto
             Value::Array { values, proto } => Value::Array {
                 values: values.clone(),
                 proto: proto.clone(),
             },
 
-            // Class: just clone maps and name
+            Value::Object { fields } => Value::Object {
+                fields: fields.clone(),
+            },
+
             Value::Class {
                 name,
                 methods,
@@ -152,7 +139,6 @@ impl Clone for Value {
                 fields: fields.clone(),
             },
 
-            // Instance: share fields, clone method maps
             Value::Instance {
                 class_name,
                 fields,
@@ -167,22 +153,20 @@ impl Clone for Value {
                 setters: setters.clone(),
             },
 
-            // Furure: clone the boxed inner value
             Value::Furure(inner) => Value::Furure(inner.clone()),
 
-            // Error wrapper
             Value::Error { message } => Value::Error {
                 message: message.clone(),
             },
 
-            // Module: clone exports + default
             Value::Module { exports, default } => Value::Module {
                 exports: exports.clone(),
                 default: default.clone(),
             },
 
-            // Tuple: deep clone values
             Value::Tuple(values) => Value::Tuple(values.clone()),
+
+            Value::Regex(r) => Value::Regex(r.clone()),
         }
     }
 }
@@ -197,20 +181,15 @@ impl fmt::Debug for Value {
 
             Value::NativeFunction(_) => write!(f, "[NativeFunction]"),
 
-            // ✅ Regex display support
             Value::Regex(r) => write!(f, "[Regex /{}/]", r.as_str()),
 
             Value::Object { .. } => write!(f, "[Object]"),
 
-            Value::Array { values, .. } => {
-                write!(f, "[Array len={}]", values.borrow().len())
-            }
+            Value::Array { values, .. } => write!(f, "[Array len={}]", values.borrow().len()),
 
             Value::Class { name, .. } => write!(f, "[Class {}]", name),
 
-            Value::Instance { class_name, .. } => {
-                write!(f, "[Instance {}]", class_name)
-            }
+            Value::Instance { class_name, .. } => write!(f, "[Instance {}]", class_name),
 
             Value::Module { exports, default } => {
                 let default_str = if default.is_some() { " + default" } else { "" };
@@ -227,55 +206,214 @@ impl fmt::Debug for Value {
 }
 
 impl Value {
-    /// Strict equality for PAWX runtime (similar to JS === semantics)
-    pub fn pawx_equals(a: &Value, b: &Value) -> bool {
+    /// Returns a stable type name string (useful for errors).
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Value::Number(_)         => "Number",
+            Value::String(_)         => "String",
+            Value::Bool(_)           => "Bool",
+            Value::Null              => "Null",
+            Value::Array { .. }      => "Array",
+            Value::Object { .. }     => "Object",
+            Value::Tuple(_)          => "Tuple",
+            Value::Class { .. }      => "Class",
+            Value::Instance { .. }   => "Instance",
+            Value::NativeFunction(_) => "Function",
+            Value::Furure(_)         => "Furure",
+            Value::Error { .. }      => "Error",
+            Value::Module { .. }     => "Module",
+            Value::Regex(_)          => "Regex",
+        }
+    }
+
+    /// PAWX truthiness (JS-ish, but intentionally simple/stable).
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Value::Bool(b) => *b,
+            Value::Null => false,
+            Value::Number(n) => *n != 0.0 && !n.is_nan(),
+            Value::String(s) => !s.is_empty(),
+            // everything else is truthy
+            _ => true,
+        }
+    }
+
+    /// Human-ish string form for debug/errors (NOT meant to be exact serialization).
+    pub fn stringify(&self) -> String {
+        match self {
+            Value::Number(n) => {
+                // keep it simple; you can add nicer formatting later
+                n.to_string()
+            }
+            Value::String(s) => s.clone(),
+            Value::Bool(b) => b.to_string(),
+            Value::Null => "null".to_string(),
+
+            Value::Regex(r) => format!("/{}/", r.as_str()),
+
+            Value::Tuple(v) => {
+                let inner = v.iter().map(|x| x.stringify()).collect::<Vec<_>>().join(", ");
+                format!("({})", inner)
+            }
+
+            Value::Array { values, .. } => {
+                let inner = values
+                    .borrow()
+                    .iter()
+                    .map(|x| x.stringify())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("[{}]", inner)
+            }
+
+            Value::Object { .. } => "[object Object]".to_string(),
+            Value::NativeFunction(_) => "[function]".to_string(),
+            Value::Class { name, .. } => format!("[class {}]", name),
+            Value::Instance { class_name, .. } => format!("[instance {}]", class_name),
+            Value::Module { .. } => "[module]".to_string(),
+            Value::Furure(_) => "[furure]".to_string(),
+            Value::Error { message } => format!("Error({})", message),
+        }
+    }
+
+    /// Loose equality (`==`) — conservative:
+    /// - primitives compare by value
+    /// - tuples deep-compare
+    /// - everything else: false unless same discriminant and both Null (handled above)
+    pub fn equals_loose(a: &Value, b: &Value) -> bool {
         match (a, b) {
-            // Numbers
             (Value::Number(x), Value::Number(y)) => x == y,
-
-            // Strings
             (Value::String(x), Value::String(y)) => x == y,
-
-            // Booleans
             (Value::Bool(x), Value::Bool(y)) => x == y,
-
-            // Null
             (Value::Null, Value::Null) => true,
 
-            // Tuples (deep compare)
-            (Value::Tuple(a), Value::Tuple(b)) => {
-                if a.len() != b.len() {
+            (Value::Tuple(x), Value::Tuple(y)) => {
+                if x.len() != y.len() {
                     return false;
                 }
-
-                for (x, y) in a.iter().zip(b.iter()) {
-                    if !Value::pawx_equals(x, y) {
+                for (a, b) in x.iter().zip(y.iter()) {
+                    if !Value::equals_loose(a, b) {
                         return false;
                     }
                 }
-
                 true
             }
 
-            // Everything else is not strictly equal
             _ => false,
         }
     }
-}
 
-impl Value {
+    /// Strict equality (`===`) — JS-style identity for reference types:
+    /// - primitives compare by value
+    /// - tuples deep-compare
+    /// - arrays/objects/functions compare by pointer identity
+    pub fn equals_strict(a: &Value, b: &Value) -> bool {
+        match (a, b) {
+            (Value::Number(x), Value::Number(y)) => x == y,
+            (Value::String(x), Value::String(y)) => x == y,
+            (Value::Bool(x), Value::Bool(y)) => x == y,
+            (Value::Null, Value::Null) => true,
+
+            (Value::Tuple(x), Value::Tuple(y)) => {
+                if x.len() != y.len() {
+                    return false;
+                }
+                for (a, b) in x.iter().zip(y.iter()) {
+                    if !Value::equals_strict(a, b) {
+                        return false;
+                    }
+                }
+                true
+            }
+
+            (Value::Array { values: a, .. }, Value::Array { values: b, .. }) => Rc::ptr_eq(a, b),
+
+            (Value::Object { fields: a }, Value::Object { fields: b }) => Rc::ptr_eq(a, b),
+
+            (Value::NativeFunction(a), Value::NativeFunction(b)) => Arc::ptr_eq(a, b),
+
+            // You can decide how strict should behave for Regex:
+            // Here: equal if pattern string matches.
+            (Value::Regex(a), Value::Regex(b)) => a.as_str() == b.as_str(),
+
+            // Classes/Instances/Modules/Furure:
+            // treat as identity types unless you want deeper behavior later.
+            _ => false,
+        }
+    }
+
     /// Attempts to extract a String reference from a Value.
-    /// Returns None if the value is not a String.
-    pub fn as_string(&self) -> Option<&String> {
+    pub fn as_string(&self) -> Option<&str> {
         match self {
-            Value::String(s) => Some(s),
+            Value::String(s) => Some(s.as_str()),
             _ => None,
         }
     }
 
     /// Convenience version that panics with a useful error.
-    pub fn expect_string(&self) -> &String {
+    pub fn expect_string(&self) -> &str {
         self.as_string()
             .unwrap_or_else(|| panic!("Expected String, got {:?}", self))
+    }
+
+    /// Attempts to extract a number.
+    pub fn as_number(&self) -> Option<f64> {
+        match self {
+            Value::Number(n) => Some(*n),
+            _ => None,
+        }
+    }
+
+    pub fn expect_number(&self) -> f64 {
+        self.as_number()
+            .unwrap_or_else(|| panic!("Expected Number, got {:?}", self))
+    }
+
+    pub fn to_pawx_string(&self) -> String {
+        match self {
+            Value::Null => "null".to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => s.clone(),
+
+            Value::Regex(r) => format!("/{}/", r.as_str()),
+
+            Value::Tuple(values) => {
+                let inner = values
+                    .iter()
+                    .map(|v| v.to_pawx_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("({})", inner)
+            }
+
+            Value::Array { values, .. } => {
+                let inner = values
+                    .borrow()
+                    .iter()
+                    .map(|v| v.to_pawx_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("[{}]", inner)
+            }
+
+            Value::Object { .. } => "[object]".to_string(),
+
+            Value::NativeFunction(_) => "[function]".to_string(),
+
+            Value::Class { name, .. } => format!("[class {}]", name),
+
+            Value::Instance { class_name, .. } => format!("[instance {}]", class_name),
+
+            Value::Module { .. } => "[module]".to_string(),
+
+            Value::Furure(_) => "[furure]".to_string(),
+
+            Value::Error { message } => message.clone(),
+        }
+    }
+
+    fn native_to_string(this: Value) -> Value {
+        Value::String(this.stringify())
     }
 }

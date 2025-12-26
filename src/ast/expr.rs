@@ -27,27 +27,122 @@
  */
 
 use crate::{ast::Stmt, lexer::token::Token, value::Value};
+use crate::span::Span;
 
- #[derive(Debug, Clone)]
- pub enum Expr {
-    Literal(Value),
-    Identifier(String),
-    Assign { name: String, value: Box<Expr> },
-    Binary { left: Box<Expr>, operator: String, right: Box<Expr> },
-    Unary { operator: String, right: Box<Expr> },
-    Call { callee: Box<Expr>, arguments: Vec<Expr> },
-    Get { object: Box<Expr>, name: String },
-    Set { object: Box<Expr>, name: String, value: Box<Expr> },
-    Index { object: Box<Expr>, index: Box<Expr> },
-    IndexAssign { object: Box<Expr>, index: Box<Expr>, value: Box<Expr> },
-    ArrayLiteral { values: Vec<Expr> },
-    ObjectLiteral { fields: Vec<(String, Expr)> },
-    Lambda { params: Vec<String>, body: Vec<Stmt> },
-    Tap { path: Box<Expr> },
-    New { class_name: String, arguments: Vec<Expr> },
-    PostIncrement { name: String },
-    PostDecrement { name: String },
-    Tuple(Vec<Expr>),
-    Grouping(Box<Expr>),
-    Logical { left: Box<Expr>, operator: Token, right: Box<Expr>, },
+#[derive(Debug, Clone)]
+pub enum Expr {
+    Literal {
+        value: Value,
+        span: Span,
+    },
+
+    Identifier {
+        name: String,
+        span: Span,
+    },
+
+    Assign {
+        name: String,
+        value: Box<Expr>,
+        span: Span,
+    },
+
+    Binary {
+        left: Box<Expr>,
+        operator: Token,
+        right: Box<Expr>,
+        span: Span,
+    },
+
+    Unary {
+        operator: Token,
+        right: Box<Expr>,
+        span: Span,
+    },
+
+    Call {
+        callee: Box<Expr>,
+        arguments: Vec<Expr>,
+        span: Span,
+    },
+
+    Get {
+        object: Box<Expr>,
+        name: String,
+        span: Span,
+    },
+
+    Set {
+        object: Box<Expr>,
+        name: String,
+        value: Box<Expr>,
+        span: Span,
+    },
+
+    Index {
+        object: Box<Expr>,
+        index: Box<Expr>,
+        span: Span,
+    },
+
+    IndexAssign {
+        object: Box<Expr>,
+        index: Box<Expr>,
+        value: Box<Expr>,
+        span: Span,
+    },
+
+    ArrayLiteral {
+        values: Vec<Expr>,
+        span: Span,
+    },
+
+    ObjectLiteral {
+        fields: Vec<(String, Expr)>,
+        span: Span,
+    },
+
+    Lambda {
+        params: Vec<String>,
+        body: Vec<Stmt>,
+        span: Span,
+    },
+
+    Tap {
+        path: Box<Expr>,
+        span: Span,
+    },
+
+    New {
+        class_name: String,
+        arguments: Vec<Expr>,
+        span: Span,
+    },
+
+    PostIncrement {
+        name: String,
+        span: Span,
+    },
+
+    PostDecrement {
+        name: String,
+        span: Span,
+    },
+
+    Tuple {
+        values: Vec<Expr>,
+        span: Span,
+    },
+
+    Grouping {
+        expr: Box<Expr>,
+        span: Span,
+    },
+
+    Logical {
+        left: Box<Expr>,
+        operator: Token, // keep Token so we can reuse its span
+        right: Box<Expr>,
+        span: Span,
+    },
 }

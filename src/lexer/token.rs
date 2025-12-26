@@ -30,6 +30,9 @@
  * ==========================================================================
  */
 
+use crate::span::Span;
+use std::fmt;
+
 /// Represents the **category of a lexical token** in the PAWX language.
 ///
 /// `TokenKind` identifies how a sequence of characters from the source
@@ -137,5 +140,39 @@ pub struct Token {
     /// - Syntax error reporting
     /// - Runtime diagnostics
     /// - Debug traces
-    pub line: usize,
+    pub span: Span,
+}
+
+impl fmt::Display for Token {
+    /// Formats a token for **user-facing output**.
+    ///
+    /// This implementation intentionally prints **only the token’s lexeme**
+    /// (the exact source text), rather than its full internal structure.
+    ///
+    /// ## Why `Display` vs `Debug`
+    /// - `Display` (`{}`) is used for **error messages and diagnostics**
+    /// - `Debug` (`{:?}`) is reserved for **developer introspection**
+    ///
+    /// In compiler error output, users care about *what they wrote*:
+    /// ```text
+    /// Invalid binary operation: ===
+    /// ```
+    /// not:
+    /// ```text
+    /// Token { kind: Symbol, lexeme: "===", span: ... }
+    /// ```
+    ///
+    /// ## Design Rationale
+    /// - Keeps error messages clean and readable
+    /// - Allows tokens to carry rich metadata (kind, span, line info)
+    ///   without leaking implementation details into user output
+    /// - Mirrors how professional compilers (rustc, clang) format tokens
+    ///
+    /// ## Usage
+    /// ```rust
+    /// panic!("Unexpected token: {}", token);
+    /// ```
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.lexeme)
+    }
 }

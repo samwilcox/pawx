@@ -49,7 +49,9 @@
  */
 
 use crate::ast::{ClassMember, Stmt};
+use crate::error::PawxError;
 use crate::interpreter::environment::{Environment, FunctionDef};
+use crate::span::Span;
 use crate::value::Value;
 use crate::interpreter::expressions::eval_expr;
 
@@ -83,42 +85,41 @@ pub enum ExecSignal {
 /// Executes a single PAWX statement inside the given environment.
 ///
 /// This is the **core dispatch function for all statement execution**.
-pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
+pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> Result<ExecSignal, PawxError> {
     match stmt {
         /* ------------------------------------------------------------------
          * Expression Statement
          * ---------------------------------------------------------------- */
         Stmt::Expression(expr) => {
-            let _ = eval_expr(expr, env);
-            ExecSignal::None
+            eval_expr(expr, env)?;
+            Ok(ExecSignal::None)
         }
 
         /* ------------------------------------------------------------------
          * Variable Declarations
          * ---------------------------------------------------------------- */
         Stmt::PublicVar { name, value } => {
-            let val = eval_expr(value, env.clone());
+            let val = eval_expr(value, env.clone())?;
 
-            // If this is a module, unwrap its default export by default
             let final_value = match val {
                 Value::Module { default: Some(default), .. } => (*default).clone(),
                 other => other,
             };
 
             env.borrow_mut().define_public(name, final_value);
-            ExecSignal::None
+            Ok(ExecSignal::None)
         }
 
         Stmt::PrivateVar { name, value } => {
-            let val = eval_expr(value, env.clone());
+            let val = eval_expr(value, env.clone())?;
             env.borrow_mut().define_private(name, val);
-            ExecSignal::None
+            Ok(ExecSignal::None)
         }
 
         Stmt::ProtectedVar { name, value } => {
-            let val = eval_expr(value, env.clone());
+            let val = eval_expr(value, env.clone())?;
             env.borrow_mut().define_protected(name, val);
-            ExecSignal::None
+            Ok(ExecSignal::None)
         }
 
         /* ------------------------------------------------------------------
@@ -130,16 +131,18 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
             body,
             return_type,
             is_async,
+            ..
         } => {
             let func_def = FunctionDef {
                 params,
                 body,
                 return_type,
                 is_async,
+                name_span: Span::new(0, 0),
             };
 
             env.borrow_mut().define_function(name, func_def);
-            ExecSignal::None
+            Ok(ExecSignal::None)
         }
 
         /* ------------------------------------------------------------------
@@ -148,10 +151,10 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
         Stmt::Return(expr_opt) => {
             let val = match expr_opt {
                 Some(expr) => eval_expr(expr, env),
-                None => Value::Null,
+                None => Ok(Value::Null),
             };
 
-            ExecSignal::Return(val)
+            Ok(ExecSignal::Return(val?))
         }
 
         /* ------------------------------------------------------------------
@@ -165,29 +168,29 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
             let cond_val = eval_expr(condition, env.clone());
 
             let truthy = match cond_val {
-                Value::Bool(b) => b,
-                Value::Number(n) => n != 0.0,
-                Value::Null => false,
+                Ok(Value::Bool(b)) => b,
+                Ok(Value::Number(n)) => n != 0.0,
+                Ok(Value::Null) => false,
                 _ => true,
             };
 
             if truthy {
                 for s in then_branch {
                     match exec_stmt(s, env.clone()) {
-                        ExecSignal::None => {}
+                        Ok(ExecSignal::None) => {}
                         other => return other,
                     }
                 }
             } else if let Some(else_body) = else_branch {
                 for s in else_body {
                     match exec_stmt(s, env.clone()) {
-                        ExecSignal::None => {}
+                        Ok(ExecSignal::None) => {}
                         other => return other,
                     }
                 }
             }
 
-            ExecSignal::None
+            Ok(ExecSignal::None)
         }
 
         /* ------------------------------------------------------------------
@@ -198,9 +201,9 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
                 let cond_val = eval_expr(condition.clone(), env.clone());
 
                 let truthy = match cond_val {
-                    Value::Bool(b) => b,
-                    Value::Number(n) => n != 0.0,
-                    Value::Null => false,
+                    Ok(Value::Bool(b)) => b,
+                    Ok(Value::Number(n)) => n != 0.0,
+                    Ok(Value::Null) => false,
                     _ => true,
                 };
 
@@ -210,13 +213,13 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
 
                 for s in &body {
                     match exec_stmt(s.clone(), env.clone()) {
-                        ExecSignal::None => {}
+                        Ok(ExecSignal::None) => {}
                         other => return other,
                     }
                 }
             }
 
-            ExecSignal::None
+            Ok(ExecSignal::None)
         }
 
         /* ------------------------------------------------------------------
@@ -233,15 +236,15 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
             // TRY
             for stmt in try_block {
                 match exec_stmt(stmt, env.clone()) {
-                    ExecSignal::None => {}
+                    Ok(ExecSignal::None) => {}
 
-                    ExecSignal::Return(v) => {
+                    Ok(ExecSignal::Return(v)) => {
                         result = ExecSignal::Return(v);
                         break;
                     }
 
-                    ExecSignal::Throw(err) => {
-                        // CATCH
+                    Ok(ExecSignal::Throw(err)) => {
+                        // Handle explicit throw
                         if let (Some(name), Some(catch_body)) =
                             (catch_param.clone(), catch_block.clone())
                         {
@@ -252,16 +255,57 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
 
                             for cstmt in catch_body {
                                 match exec_stmt(cstmt, catch_env.clone()) {
-                                    ExecSignal::None => {}
-                                    other => {
+                                    Ok(ExecSignal::None) => {}
+                                    Ok(other) => {
                                         result = other;
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        result = ExecSignal::Throw(Value::Error {
+                                            message: e.message,
+                                        });
                                         break;
                                     }
                                 }
                             }
                         } else {
-                            // Unhandled inside try; propagate
                             result = ExecSignal::Throw(err);
+                        }
+
+                        break;
+                    }
+
+                    Err(e) => {
+                        // Normalize runtime error → throw
+                        let err_val = Value::Error {
+                            message: e.message,
+                        };
+
+                        if let (Some(name), Some(catch_body)) =
+                            (catch_param.clone(), catch_block.clone())
+                        {
+                            let catch_env =
+                                Rc::new(RefCell::new(Environment::new(Some(env.clone()))));
+
+                            catch_env.borrow_mut().define_public(name, err_val);
+
+                            for cstmt in catch_body {
+                                match exec_stmt(cstmt, catch_env.clone()) {
+                                    Ok(ExecSignal::None) => {}
+                                    Ok(other) => {
+                                        result = other;
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        result = ExecSignal::Throw(Value::Error {
+                                            message: e.message,
+                                        });
+                                        break;
+                                    }
+                                }
+                            }
+                        } else {
+                            result = ExecSignal::Throw(err_val);
                         }
 
                         break;
@@ -269,18 +313,22 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
                 }
             }
 
-            // FINALLY
+            // FINALLY (always runs)
             if let Some(finally_body) = finally_block {
                 for fstmt in finally_body {
                     match exec_stmt(fstmt, env.clone()) {
-                        ExecSignal::None => {}
-                        // finally wins over try/catch result
-                        other => return other,
+                        Ok(ExecSignal::None) => {}
+                        Ok(other) => return Ok(other),
+                        Err(e) => {
+                            return Ok(ExecSignal::Throw(Value::Error {
+                                message: e.message,
+                            }))
+                        }
                     }
                 }
             }
 
-            result
+            Ok(result)
         }
 
         /* ------------------------------------------------------------------
@@ -303,7 +351,7 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
                 match member {
                     ClassMember::Field { name, value, .. } => {
                         let val = if let Some(expr) = value {
-                            eval_expr(expr, env.clone())
+                            eval_expr(expr, env.clone())?
                         } else {
                             Value::Null
                         };
@@ -319,6 +367,7 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
                                 body,
                                 return_type: None,
                                 is_async: false,
+                                name_span: Span::new(0, 0),
                             },
                         );
                     }
@@ -331,6 +380,7 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
                                 body,
                                 return_type: None,
                                 is_async: false,
+                                name_span: Span::new(0, 0),
                             },
                         );
                     }
@@ -347,6 +397,7 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
                                 body,
                                 return_type: None,
                                 is_async: false,
+                                name_span: Span::new(0, 0),
                             },
                         );
                     }
@@ -368,7 +419,7 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
                 env.borrow_mut().define_public(name, class_val);
             }
 
-            ExecSignal::None
+            Ok(ExecSignal::None)
         }
 
         /* ------------------------------------------------------------------
@@ -378,7 +429,7 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
             // For now, instinct types are only compile-time;
             // at runtime we just expose a sentinel value.
             env.borrow_mut().define_public(name, Value::Null);
-            ExecSignal::None
+            Ok(ExecSignal::None)
         }
 
         /* ------------------------------------------------------------------
@@ -390,14 +441,14 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
             // 🔧 This avoids the fragile `match name { ... }` and
             // works cleanly with `Option<String>`.
             if let Some(export_name) = name {
-                env.borrow_mut().define_public(export_name, val);
+                env.borrow_mut().define_public(export_name, val?);
             } else {
                 // default export: `exports default = expr;`
                 env.borrow_mut()
-                    .define_public("default".to_string(), val);
+                    .define_public("default".to_string(), val?);
             }
 
-            ExecSignal::None
+            Ok(ExecSignal::None)
         }
 
         /* ------------------------------------------------------------------
@@ -405,7 +456,7 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
          * ---------------------------------------------------------------- */
         Stmt::Throw(expr) => {
             let val = eval_expr(expr, env);
-            ExecSignal::Throw(val)
+            Ok(ExecSignal::Throw(val?))
         }
 
         /* ------------------------------------------------------------------
@@ -415,8 +466,7 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
             let val = eval_expr(expr, env);
 
             match val {
-                // 🔧 Typo fix: assume your enum variant is `Future`
-                Value::Furure(inner) => ExecSignal::Return(*inner),
+                Ok(Value::Furure(inner)) => Ok(ExecSignal::Return(*inner)),
                 _ => panic!("nap can only be used on a Future"),
             }
         }
@@ -431,9 +481,21 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
             // Execute all statements inside the pride block
             for stmt in body {
                 match exec_stmt(stmt, pride_env.clone()) {
-                    ExecSignal::None => {}
-                    ExecSignal::Return(v) => return ExecSignal::Return(v),
-                    ExecSignal::Throw(e) => return ExecSignal::Throw(e),
+                    Ok(ExecSignal::None) => {}
+
+                    Ok(ExecSignal::Return(v)) => {
+                        return Ok(ExecSignal::Return(v));
+                    }
+
+                    Ok(ExecSignal::Throw(e)) => {
+                        return Ok(ExecSignal::Throw(e));
+                    }
+
+                    Err(e) => {
+                        return Ok(ExecSignal::Throw(Value::Error {
+                            message: e.message,
+                        }));
+                    }
                 }
             }
 
@@ -450,7 +512,7 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
                 },
             );
 
-            ExecSignal::None
+            Ok(ExecSignal::None)
         }
     }
 }
@@ -466,16 +528,29 @@ pub fn exec_stmt(stmt: Stmt, env: Rc<RefCell<Environment>>) -> ExecSignal {
 ///  • Modules
 ///  • Imported files (tap)
 ///  • Sub-execution contexts
-pub fn run_in_env(statements: Vec<Stmt>, env: Rc<RefCell<Environment>>) {
+pub fn run_in_env(
+    statements: Vec<Stmt>,
+    env: Rc<RefCell<Environment>>,
+) -> Result<ExecSignal, PawxError> {
     for stmt in statements {
         match exec_stmt(stmt, env.clone()) {
-            ExecSignal::None => {}
+            Ok(ExecSignal::None) => {}
 
-            ExecSignal::Return(_) => break,
+            Ok(ExecSignal::Return(v)) => {
+                return Ok(ExecSignal::Return(v));
+            }
 
-            ExecSignal::Throw(err) => {
-                panic!("Uncaught Pawx error in module: {:?}", err);
+            Ok(ExecSignal::Throw(e)) => {
+                return Ok(ExecSignal::Throw(e));
+            }
+
+            Err(e) => {
+                return Ok(ExecSignal::Throw(Value::Error {
+                    message: e.message,
+                }));
             }
         }
     }
+
+    Ok(ExecSignal::None)
 }

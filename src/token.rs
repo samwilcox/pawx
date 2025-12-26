@@ -28,6 +28,8 @@
 
  #![allow(dead_code, unused_variables, unused_imports)]
 
+ use crate::span::Span;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Number,
@@ -51,7 +53,7 @@ pub fn tokenize(source: &str) -> Vec<Token> {
     tokens.push(Token {
         kind: TokenKind::Eof,
         lexme: "".to_string(),
-        line: 1,
+        span: Span::new(self.line, self.column)
     });
 
     tokens

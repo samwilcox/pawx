@@ -1,13 +1,5 @@
-snuggle fileName = './test.txt';
+meow([1, 2, 3].toString());        // "1,2,3"
+meow([true, null, 5].toString()); // "true,null,5"
 
-Fs.writeTextAsync(fileName, 'Async write!')
-  .then(() -> {
-      meow('Write OK!');
-  })
-  .catch(err -> {
-      meow('Error!');
-      meow(err);
-  })
-  .finally(() -> {
-      meow('Cleanup done.');
-  });
+snuggle a = [1, [2, 3]];
+meow(a.toString());               // "1,[2, 3]"

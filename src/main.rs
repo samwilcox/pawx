@@ -33,6 +33,7 @@ mod interpreter;
 mod value;
 mod error;
 mod prototypes;
+mod span;
 
 use std::env;
 use std::fs;
@@ -44,6 +45,22 @@ fn main() {
         eprintln!("Usage: pawx <file.px>");
         std::process::exit(1);
     }
+
+    let banner = r#"
+     _______     __       __   __  ___  ___  ___  
+    |   __ "\   /""\     |"  |/  \|  "||"  \/"  | 
+    (. |__) :) /    \    |'  /    \:  | \   \  /  
+    |:  ____/ /' /\  \   |: /'        |  \\  \/   
+    (|  /    //  __'  \   \//  /\'    |  /\.  \   
+   /|__/ \  /   /  \\  \  /   /  \\   | /  \   \  
+  (_______)(___/    \___)|___/    \___||___/\___|                                    
+    "#;
+
+    println!("{banner}");
+    println!("VERSION -> {}", env!("CARGO_PKG_VERSION"));
+    println!("AUTHOR -> Sam Wilcox");
+    println!("RUNNING -> {}", &args[1]);
+    println!();
 
     let source = fs::read_to_string(&args[1])
         .expect("Failed to read Pawx source file");

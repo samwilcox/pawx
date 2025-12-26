@@ -63,6 +63,7 @@ use std::sync::Arc;
 use crate::ast::Stmt;
 use crate::interpreter::environment::Environment;
 use crate::value::Value;
+use crate::interpreter::environment::FunctionDef;
 
 use timers::{install_timers, TimerRuntime};
 use statements::{exec_stmt, ExecSignal};
@@ -145,9 +146,20 @@ pub fn run(statements: Vec<Stmt>) {
     // -------------------------------------------------------------------------
     for stmt in statements {
         match exec_stmt(stmt, env.clone()) {
-            ExecSignal::None => {}
-            ExecSignal::Return(_) => break,
-            ExecSignal::Throw(err) => panic!("Uncaught Pawx error: {:?}", err),
+            Ok(ExecSignal::None) => {}
+
+            Ok(ExecSignal::Return(_)) => {
+                // top-level return is allowed but ignored
+                break;
+            }
+
+            Ok(ExecSignal::Throw(err)) => {
+                panic!("Uncaught Pawx error: {:?}", err);
+            }
+
+            Err(e) => {
+                panic!("Uncaught Pawx runtime error: {:?}", e);
+            }
         }
 
         // Timer pump delegated to timers.rs
@@ -162,9 +174,20 @@ pub fn run(statements: Vec<Stmt>) {
 pub fn run_in_env(statements: Vec<Stmt>, env: Rc<RefCell<Environment>>) {
     for stmt in statements {
         match exec_stmt(stmt, env.clone()) {
-            ExecSignal::None => {}
-            ExecSignal::Return(_) => break,
-            ExecSignal::Throw(err) => panic!("Uncaught Pawx error in module: {:?}", err),
+            Ok(ExecSignal::None) => {}
+
+            Ok(ExecSignal::Return(_)) => {
+                // ignore return at module top-level
+                break;
+            }
+
+            Ok(ExecSignal::Throw(err)) => {
+                panic!("Uncaught Pawx error in module: {:?}", err);
+            }
+
+            Err(e) => {
+                panic!("Uncaught Pawx runtime error in module: {:?}", e);
+            }
         }
     }
 }

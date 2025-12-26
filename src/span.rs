@@ -13,7 +13,7 @@
  * 
  * PAWX is dual-licensed under the terms of:
  *   - The MIT license
- *   - The Apache License, Version 2.0
+ *   - THe Apache License, Version 2.0
  * 
  * You may choose either license to govern your use of this software.
  * Full license text available at:
@@ -26,19 +26,14 @@
  * ==========================================================================
  */
 
- #![allow(dead_code, unused_variables, unused_imports)]
+#[derive(Debug, Clone, Copy)]
+pub struct Span {
+    pub line: usize,
+    pub column: usize,
+}
 
-pub mod lexer;
-pub mod parser;
-pub mod ast;
-pub mod interpreter;
-pub mod value;
-pub mod error;
-pub mod prototypes;
-pub mod span;
-
-pub fn run(source: &str) {
-    let tokens = lexer::tokenize(source);
-    let ast = parser::parse(tokens);
-    interpreter::run(ast);
+impl Span {
+    pub fn new(line: usize, column: usize) -> Self {
+        Self {line, column }
+    }
 }

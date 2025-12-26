@@ -48,6 +48,7 @@
 
 use crate::interpreter::environment::Environment;
 use crate::value::Value;
+use crate::interpreter::environment::FunctionDef;
 
 use std::cell::RefCell;
 use std::collections::HashMap;

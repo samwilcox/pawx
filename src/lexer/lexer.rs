@@ -26,8 +26,9 @@
  * ==========================================================================
  */
 
- use crate::lexer::token::{Token, TokenKind};
+use crate::lexer::token::{Token, TokenKind};
 use crate::lexer::keywords::is_keyword;
+use crate::span::Span;
 
 pub struct Lexer {
     chars: Vec<char>,
@@ -85,7 +86,10 @@ impl Lexer {
         self.tokens.push(Token {
             kind: TokenKind::Eof,
             lexeme: "".to_string(),
-            line: self.line,
+            span: Span {
+                line: self.line,
+                column: 0,
+            },
         });
     }
 
@@ -129,7 +133,10 @@ impl Lexer {
                     self.tokens.push(Token {
                         kind: TokenKind::Symbol,
                         lexeme: "/".to_string(),
-                        line: self.line,
+                        span: Span {
+                            line: self.line,
+                            column: 0
+                        },
                     });
                 }
             }
@@ -141,20 +148,29 @@ impl Lexer {
                     self.tokens.push(Token {
                         kind: TokenKind::Symbol,
                         lexeme: "->".to_string(),
-                        line: self.line,
+                        span: Span {
+                            line: self.line,
+                            column: 0
+                        },
                     });
                 } else if self.peek() == '-' {
                     self.advance();
                     self.tokens.push(Token {
                         kind: TokenKind::Symbol,
                         lexeme: "--".to_string(),
-                        line: self.line,
+                        span: Span {
+                            line: self.line,
+                            column: 0
+                        },
                     });
                 } else {
                     self.tokens.push(Token {
                         kind: TokenKind::Symbol,
                         lexeme: "-".to_string(),
-                        line: self.line,
+                        span: Span {
+                            line: self.line,
+                            column: 0
+                        },
                     });
                 }
             }
@@ -165,13 +181,19 @@ impl Lexer {
                     self.tokens.push(Token {
                         kind: TokenKind::Symbol,
                         lexeme: "++".to_string(),
-                        line: self.line,
+                        span: Span {
+                            line: self.line,
+                            column: 0
+                        },
                     });
                 } else {
                     self.tokens.push(Token {
                         kind: TokenKind::Symbol,
                         lexeme: "+".to_string(),
-                        line: self.line,
+                        span: Span {
+                            line: self.line,
+                            column: 0
+                        },
                     });
                 }
             }
@@ -192,7 +214,10 @@ impl Lexer {
                 self.tokens.push(Token {
                     kind: TokenKind::Symbol,
                     lexeme: lex,
-                    line: self.line,
+                    span: Span {
+                        line: self.line,
+                        column: 0
+                    },
                 });
             }
 
@@ -211,13 +236,19 @@ impl Lexer {
                     self.tokens.push(Token {
                         kind: TokenKind::Symbol,
                         lexeme: "&&".to_string(),
-                        line: self.line,
+                        span: Span {
+                            line: self.line,
+                            column: 0,
+                        },
                     });
                 } else {
                     self.tokens.push(Token {
                         kind: TokenKind::Symbol,
                         lexeme: "&".to_string(),
-                        line: self.line,
+                        span: Span {
+                            line: self.line,
+                            column: 0
+                        },
                     });
                 }
             }
@@ -228,13 +259,19 @@ impl Lexer {
                     self.tokens.push(Token {
                         kind: TokenKind::Symbol,
                         lexeme: "||".to_string(),
-                        line: self.line,
+                        span: Span {
+                            line: self.line,
+                            column: 0
+                        },
                     });
                 } else {
                     self.tokens.push(Token {
                         kind: TokenKind::Symbol,
                         lexeme: "|".to_string(),
-                        line: self.line,
+                        span: Span {
+                            line: self.line,
+                            column: 0
+                        },
                     });
                 }
             }
@@ -244,7 +281,10 @@ impl Lexer {
                 self.tokens.push(Token {
                     kind: TokenKind::Symbol,
                     lexeme: ch.to_string(),
-                    line: self.line,
+                    span: Span {
+                        line: self.line,
+                        column: 0
+                    },
                 });
             }
         }
@@ -283,7 +323,10 @@ impl Lexer {
         self.tokens.push(Token {
             kind: TokenKind::String,
             lexeme: value,
-            line: self.line,
+            span: Span {
+                line: self.line,
+                column: 0
+            },
         });
     }
 
@@ -316,7 +359,10 @@ impl Lexer {
         self.tokens.push(Token {
             kind,
             lexeme: text,
-            line: self.line,
+            span: Span {
+                line: self.line,
+                column: 0
+            },
         });
     }
 
@@ -349,7 +395,10 @@ impl Lexer {
         self.tokens.push(Token {
             kind: TokenKind::Number,
             lexeme: value,
-            line: self.line,
+            span: Span {
+                line: self.line,
+                column: 0
+            },
         });
     }
 

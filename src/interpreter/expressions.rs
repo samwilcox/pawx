@@ -53,7 +53,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::ast::Expr;
+use crate::error::PawxError;
 use crate::interpreter::environment::Environment;
+use crate::interpreter::environment::FunctionDef;
 use crate::value::Value;
 
 // Call dispatch (from calls.rs)
@@ -95,179 +97,220 @@ fn resolve_furure(value: &Value) -> Value {
 ///
 /// # Returns
 /// - The evaluated runtime `Value`
-pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
+pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Result<Value, PawxError> {
     match expr {
         // ---------------------------------------------------------------------
         // Literal Values
         // ---------------------------------------------------------------------
-        Expr::Literal(v) => v,
+        Expr::Literal { value, .. } => Ok(value),
 
         // ---------------------------------------------------------------------
         // Identifier Lookup
         // ---------------------------------------------------------------------
-        Expr::Identifier(name) => {
-            if name == "this" {
-                env.borrow()
+        Expr::Identifier { name, .. } => {
+            match name.as_str() {
+                "true"  => Ok(Value::Bool(true)),
+                "false" => Ok(Value::Bool(false)),
+                "null"  => Ok(Value::Null),
+
+                // `this`
+                "this" => Ok(env.borrow()
                     .get("this", false)
-                    .unwrap_or_else(|| panic!("'this' used outside of class"))
-            } else {
-                env.borrow()
+                    .unwrap_or_else(|| panic!("'this' used outside of class"))),
+
+                // Normal variable lookup
+                _ => Ok(env.borrow()
                     .get(&name, false)
-                    .unwrap_or_else(|| panic!("Undefined variable '{}'", name))
+                    .unwrap_or_else(|| panic!("Undefined variable '{}'", name))),
             }
         }
 
         // ---------------------------------------------------------------------
         // Tuple Literal
         // ---------------------------------------------------------------------
-        Expr::Tuple(values) => {
-            let evaluated = values
-                .into_iter()
-                .map(|v| eval_expr(v, env.clone()))
-                .collect();
-            Value::Tuple(evaluated)
+        Expr::Tuple { values, .. } => {
+           let evaluated: Vec<Value> = values
+            .into_iter()
+            .map(|v| eval_expr(v, env.clone()))
+            .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(Value::Tuple(evaluated))
         }
 
         // ---------------------------------------------------------------------
         // Assignment (simple identifier = expr)
         // ---------------------------------------------------------------------
-        Expr::Assign { name, value } => {
-            let assigned = eval_expr(*value, env.clone());
+        Expr::Assign { name, value, span } => {
+            let assigned = eval_expr(*value, env.clone())?;
 
             // If we assign a module, automatically unwrap its default export
             if let Value::Module { default: Some(default_val), .. } = &assigned {
                 let real = *default_val.clone();
                 env.borrow_mut().define_public(name, real.clone());
-                return real;
+                return Ok(real);
             }
 
             if !env.borrow_mut().assign(&name, assigned.clone()) {
-                panic!("Undefined variable '{}'", name);
+                return Err(
+                    PawxError::new(
+                        "P0002",
+                        format!("undefined variable '{}'", name),
+                        span,
+                    )
+                );
             }
 
-            assigned
+            Ok(assigned)
         }
 
         // ---------------------------------------------------------------------
         // Unary Operators
         // ---------------------------------------------------------------------
-        Expr::Unary { operator, right } => {
-            let r = eval_expr(*right, env);
-            match (operator.as_str(), r) {
-                ("-", Value::Number(n)) => Value::Number(-n),
-                ("!", Value::Bool(b)) => Value::Bool(!b),
-                _ => panic!("Invalid unary operation: {}", operator),
+        Expr::Unary { operator, right, span } => {
+            let r = eval_expr(*right, env)?;
+
+            match (operator.lexeme.as_str(), &r) {
+                ("-", Value::Number(n)) => Ok(Value::Number(-n)),
+                ("!", Value::Bool(b)) => Ok(Value::Bool(!b)),
+
+                _ => Err(PawxError::new(
+                    "P0003",
+                    format!(
+                        "invalid unary operation '{}' on {}",
+                        operator.lexeme,
+                        r.type_name(),
+                    ),
+                    span,
+                )),
             }
         }
 
         // ---------------------------------------------------------------------
         // Binary Operators
         // ---------------------------------------------------------------------
-        Expr::Binary { left, operator, right } => {
-            let l = eval_expr(*left, env.clone());
-            let r = eval_expr(*right, env);
+        Expr::Binary { left, operator, right, span } => {
+            let l = eval_expr(*left, env.clone())?;
+            let r = eval_expr(*right, env)?;
 
-            match (l, r, operator.as_str()) {
+            match (l, r, operator.lexeme.as_str()) {
                 // -------------------------------
                 // Arithmetic
                 // -------------------------------
-                (Value::Number(a), Value::Number(b), "+") => Value::Number(a + b),
-                (Value::Number(a), Value::Number(b), "-") => Value::Number(a - b),
-                (Value::Number(a), Value::Number(b), "*") => Value::Number(a * b),
-                (Value::Number(a), Value::Number(b), "/") => Value::Number(a / b),
-                (Value::Number(a), Value::Number(b), "%") => Value::Number(a % b),
+                (Value::Number(a), Value::Number(b), "+") => Ok(Value::Number(a + b)),
+                (Value::Number(a), Value::Number(b), "-") => Ok(Value::Number(a - b)),
+                (Value::Number(a), Value::Number(b), "*") => Ok(Value::Number(a * b)),
+                (Value::Number(a), Value::Number(b), "/") => Ok(Value::Number(a / b)),
+                (Value::Number(a), Value::Number(b), "%") => Ok(Value::Number(a % b)),
 
-                (Value::String(a), Value::String(b), "+") => Value::String(format!("{}{}", a, b)),
-                (Value::String(a), Value::Number(b), "+") => Value::String(format!("{}{}", a, b)),
-                (Value::Number(a), Value::String(b), "+") => Value::String(format!("{}{}", a, b)),
+                (Value::String(a), Value::String(b), "+") => Ok(Value::String(format!("{}{}", a, b))),
+                (Value::String(a), Value::Number(b), "+") => Ok(Value::String(format!("{}{}", a, b))),
+                (Value::Number(a), Value::String(b), "+") => Ok(Value::String(format!("{}{}", a, b))),
 
                 // -------------------------------
                 // Loose Equality (==)
                 // -------------------------------
-                (Value::Number(a), Value::Number(b), "==") => Value::Bool(a == b),
-                (Value::String(a), Value::String(b), "==") => Value::Bool(a == b),
-                (Value::Bool(a), Value::Bool(b), "==")     => Value::Bool(a == b),
-                (Value::Null, Value::Null, "==")           => Value::Bool(true),
+                (Value::Number(a), Value::Number(b), "==") => Ok(Value::Bool(a == b)),
+                (Value::String(a), Value::String(b), "==") => Ok(Value::Bool(a == b)),
+                (Value::Bool(a), Value::Bool(b), "==")     => Ok(Value::Bool(a == b)),
+                (Value::Null, Value::Null, "==")           => Ok(Value::Bool(true)),
 
                 // universal fallback ==
                 (a, b, "==") => {
-                    Value::Bool(std::mem::discriminant(&a) == std::mem::discriminant(&b))
+                    Ok(Value::Bool(std::mem::discriminant(&a) == std::mem::discriminant(&b)))
                 }
 
                 // -------------------------------
                 // Strict Equality (===)
                 // -------------------------------
-                (Value::Number(a), Value::Number(b), "===") => Value::Bool(a == b),
-                (Value::String(a), Value::String(b), "===") => Value::Bool(a == b),
-                (Value::Bool(a), Value::Bool(b), "===")     => Value::Bool(a == b),
-                (Value::Null, Value::Null, "===")           => Value::Bool(true),
+                (Value::Number(a), Value::Number(b), "===") => Ok(Value::Bool(a == b)),
+                (Value::String(a), Value::String(b), "===") => Ok(Value::Bool(a == b)),
+                (Value::Bool(a), Value::Bool(b), "===")     => Ok(Value::Bool(a == b)),
+                (Value::Null, Value::Null, "===")           => Ok(Value::Bool(true)),
 
-                (a, b, "===") => Value::Bool(values_equal_strict(&a, &b)),
+                (a, b, "===") => Ok(Value::Bool(values_equal_strict(&a, &b))),
 
                 // -------------------------------
                 // Loose Inequality (!=)
                 // -------------------------------
-                (Value::Number(a), Value::Number(b), "!=") => Value::Bool(a != b),
-                (Value::String(a), Value::String(b), "!=") => Value::Bool(a != b),
-                (Value::Bool(a), Value::Bool(b), "!=")     => Value::Bool(a != b),
-                (Value::Null, Value::Null, "!=")           => Value::Bool(false),
+                (Value::Number(a), Value::Number(b), "!=") => Ok(Value::Bool(a != b)),
+                (Value::String(a), Value::String(b), "!=") => Ok(Value::Bool(a != b)),
+                (Value::Bool(a), Value::Bool(b), "!=")     => Ok(Value::Bool(a != b)),
+                (Value::Null, Value::Null, "!=")           => Ok(Value::Bool(false)),
 
                 (a, b, "!=") => {
-                    Value::Bool(std::mem::discriminant(&a) != std::mem::discriminant(&b))
+                    Ok(Value::Bool(std::mem::discriminant(&a) != std::mem::discriminant(&b)))
                 }
 
                 // -------------------------------
                 // Strict Inequality (!==)
                 // -------------------------------
-                (Value::Number(a), Value::Number(b), "!==") => Value::Bool(a != b),
-                (Value::String(a), Value::String(b), "!==") => Value::Bool(a != b),
-                (Value::Bool(a), Value::Bool(b), "!==")     => Value::Bool(a != b),
-                (Value::Null, Value::Null, "!==")           => Value::Bool(false),
+                (Value::Number(a), Value::Number(b), "!==") => Ok(Value::Bool(a != b)),
+                (Value::String(a), Value::String(b), "!==") => Ok(Value::Bool(a != b)),
+                (Value::Bool(a), Value::Bool(b), "!==")     => Ok(Value::Bool(a != b)),
+                (Value::Null, Value::Null, "!==")           => Ok(Value::Bool(false)),
 
-                (a, b, "!==") => Value::Bool(!values_equal_strict(&a, &b)),
+                (a, b, "!==") => Ok(Value::Bool(!values_equal_strict(&a, &b))),
 
                 // -------------------------------
                 // Comparisons
                 // -------------------------------
-                (Value::Number(a), Value::Number(b), ">")  => Value::Bool(a > b),
-                (Value::Number(a), Value::Number(b), "<")  => Value::Bool(a < b),
-                (Value::Number(a), Value::Number(b), ">=") => Value::Bool(a >= b),
-                (Value::Number(a), Value::Number(b), "<=") => Value::Bool(a <= b),
+                (Value::Number(a), Value::Number(b), ">")  => Ok(Value::Bool(a > b)),
+                (Value::Number(a), Value::Number(b), "<")  => Ok(Value::Bool(a < b)),
+                (Value::Number(a), Value::Number(b), ">=") => Ok(Value::Bool(a >= b)),
+                (Value::Number(a), Value::Number(b), "<=") => Ok(Value::Bool(a <= b)),
 
                 // -------------------------------
-                // Fallback
+                // Error fallback
                 // -------------------------------
-                _ => panic!("Invalid binary operation: {}", operator),
+                (l, r, _) => Err(
+                    PawxError::new(
+                        "P0004",
+                        format!(
+                            "invalid binrary operation '{}'",
+                            operator.lexeme
+                        ),
+                        span,
+                    )
+                    .with_help(format!(
+                        "'{}' cannot be applied to {} and {}",
+                        operator.lexeme,
+                        l.type_name(),
+                        r.type_name()
+                    ))
+                ),
             }
         }
 
         // ---------------------------------------------------------------------
         // Function Calls
         // ---------------------------------------------------------------------
-        Expr::Call { callee, arguments } => {
+        Expr::Call { callee, arguments, span } => {
             match *callee {
                 // Direct named call: foo(...)
-                Expr::Identifier(name) => {
+                Expr::Identifier { name, .. } => {
                     // User-defined function
                     if let Some(func) = env.borrow().get_function(&name) {
-                        let arg_vals = arguments
+                        let arg_vals: Vec<Value> = arguments
                             .into_iter()
                             .map(|a| eval_expr(a, env.clone()))
-                            .collect();
-                        return call_user_function(func, arg_vals, env.clone());
+                            .collect::<Result<Vec<_>, _>>()?;
+
+                        return Ok(call_user_function(func, arg_vals, env.clone())?);
                     }
 
                     // Anything else callable by name (class, built-in, etc.)
-                    let callee_val = env.borrow().get(&name, false)
+                    let callee_val = env
+                        .borrow()
+                        .get(&name, false)
                         .unwrap_or_else(|| panic!("Undefined function or callable '{}'", name));
 
-                    call_value(callee_val, arguments, env.clone())
+                    Ok(call_value(callee_val, arguments, env.clone())?)
                 }
 
-                // Method calls & higher-order funcs: something()(...) or obj.method(...)
+                // Method calls & higher-order funcs
                 other => {
-                    let callee_val = eval_expr(other, env.clone());
-                    call_value(callee_val, arguments, env)
+                    let callee_val = eval_expr(other, env.clone())?;
+                    Ok(call_value(callee_val, arguments, env)?)
                 }
             }
         }
@@ -275,38 +318,39 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
         // ---------------------------------------------------------------------
         // Grouping
         // ---------------------------------------------------------------------
-        Expr::Grouping(expr) => eval_expr(*expr, env),
+        Expr::Grouping { expr, .. } => eval_expr(*expr, env),
 
         // ---------------------------------------------------------------------
         // Array Literal
         // ---------------------------------------------------------------------
-        Expr::ArrayLiteral { values } => {
-            let evaluated = values
+        Expr::ArrayLiteral { values, span } => {
+            let evaluated: Vec<Value> = values
                 .into_iter()
                 .map(|v| eval_expr(v, env.clone()))
-                .collect();
+                .collect::<Result<Vec<_>, _>>()?;
 
-            Value::Array {
+
+            Ok(Value::Array {
                 values: Rc::new(RefCell::new(evaluated)),
                 proto: create_array_proto(),
-            }
+            })
         }
 
         // ---------------------------------------------------------------------
         // Index Read: arr[i]
         // ---------------------------------------------------------------------
-        Expr::Index { object, index } => {
+        Expr::Index { object, index, span } => {
             let obj = eval_expr(*object, env.clone());
             let idx = eval_expr(*index, env);
 
             let i = match idx {
-                Value::Number(n) => n as usize,
+                Ok(Value::Number(n)) => n as usize,
                 _ => panic!("Array index must be a number"),
             };
 
             match obj {
-                Value::Array { values, .. } => {
-                    values.borrow().get(i).cloned().unwrap_or(Value::Null)
+                Ok(Value::Array { values, .. }) => {
+                    Ok(values.borrow().get(i).cloned().unwrap_or(Value::Null))
                 }
                 _ => panic!("Indexing only supported on arrays"),
             }
@@ -315,47 +359,68 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
         // ---------------------------------------------------------------------
         // Index Assignment: arr[i] = value
         // ---------------------------------------------------------------------
-        Expr::IndexAssign { object, index, value } => {
-            let obj = eval_expr(*object, env.clone());
-            let idx = eval_expr(*index, env.clone());
-            let val = eval_expr(*value, env);
+        Expr::IndexAssign { object, index, value, span } => {
+            // Evaluate each expression ONCE
+            let obj = eval_expr(*object, env.clone())?;
+            let idx = eval_expr(*index, env.clone())?;
+            let val = eval_expr(*value, env)?; // ✅ moved & unwrapped once
 
             let i = match idx {
                 Value::Number(n) => n as usize,
-                _ => panic!("Array index must be a number"),
+                _ => {
+                    return Err(PawxError::new(
+                        "P0012",
+                        "array index must be a number",
+                        span,
+                    ))
+                }
             };
 
             match obj {
                 Value::Array { values, .. } => {
                     let mut arr = values.borrow_mut();
+
                     if i >= arr.len() {
-                        panic!("Array index out of bounds");
+                        return Err(PawxError::new(
+                            "P0013",
+                            "array index out of bounds",
+                            span,
+                        ));
                     }
+
                     arr[i] = val.clone();
-                    val
+                    Ok(val)
                 }
-                _ => panic!("Index assignment only supported on arrays"),
+
+                _ => Err(PawxError::new(
+                    "P0014",
+                    "index assignment only supported on arrays",
+                    span,
+                )),
             }
         }
 
         // ---------------------------------------------------------------------
         // Object Literal: { a: 1, b: 2 }
         // ---------------------------------------------------------------------
-        Expr::ObjectLiteral { fields } => {
+        Expr::ObjectLiteral { fields, span } => {
             let mut map = HashMap::new();
+
             for (name, expr) in fields {
-                map.insert(name, eval_expr(expr, env.clone()));
+                let value = eval_expr(expr, env.clone())?;
+                map.insert(name, value);
             }
 
-            Value::Object {
+            Ok(Value::Object {
                 fields: Rc::new(RefCell::new(map)),
-            }
+            })
+
         }
 
         // ---------------------------------------------------------------------
         // Property Get: obj.prop
         // ---------------------------------------------------------------------
-        Expr::Get { object, name } => {
+        Expr::Get { object, name, span } => {
             let target = eval_expr(*object, env.clone());
             let prop_name = name; // move into local for convenience
 
@@ -363,38 +428,47 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
                 // ---------------------------------
                 // Plain object: obj.prop
                 // ---------------------------------
-                Value::Object { fields } => {
-                    fields
+                Ok(Value::Object { fields }) => {
+                    Ok(fields
                         .borrow()
                         .get(&prop_name)
                         .cloned()
-                        .unwrap_or(Value::Null)
+                        .unwrap_or(Value::Null))
                 }
 
                 // ---------------------------------
                 // Array: arr.length or arr.method
                 // ---------------------------------
-                Value::Array { values, proto } => {
+                Ok(Value::Array { values, proto }) => {
                     if prop_name == "length" {
-                        Value::Number(values.borrow().len() as f64)
+                        Ok(Value::Number(values.borrow().len() as f64))
+                    } else if let Some(Value::NativeFunction(f)) = proto.get(&prop_name).cloned() {
+                        let receiver = Value::Array {
+                            values: values.clone(),
+                            proto: proto.clone(),
+                        };
+
+                        Ok(Value::NativeFunction(Arc::new(move |args| {
+                            let mut full_args = Vec::with_capacity(args.len() + 1);
+                            full_args.push(receiver.clone());
+                            full_args.extend(args);
+                            f(full_args)
+                        })))
                     } else {
-                        proto
-                            .get(&prop_name)
-                            .cloned()
-                            .unwrap_or(Value::Null)
+                        Ok(Value::Null)
                     }
                 }
 
                 // ---------------------------------
                 // Furure: .then / .catch / .finally
                 // ---------------------------------
-                Value::Furure(inner) => {
+                Ok(Value::Furure(inner)) => {
                     let resolved = (*inner).clone(); // the stored result
 
                     match prop_name.as_str() {
                         // then(callback) – always runs, passes the resolved value
                         "then" => {
-                            Value::NativeFunction(Arc::new(move |args: Vec<Value>| -> Value {
+                            Ok(Value::NativeFunction(Arc::new(move |args: Vec<Value>| -> Value {
                                 if args.is_empty() {
                                     panic!("then(callback): missing callback");
                                 }
@@ -410,12 +484,12 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
 
                                 // return a new Furure carrying the same resolved value for chaining
                                 Value::Furure(Box::new(value_for_chain))
-                            }))
+                            })))
                         }
 
                         // catch(callback) – only runs if resolved is an Error
                         "catch" => {
-                            Value::NativeFunction(Arc::new(move |args: Vec<Value>| -> Value {
+                            Ok(Value::NativeFunction(Arc::new(move |args: Vec<Value>| -> Value {
                                 if args.is_empty() {
                                     panic!("catch(callback): missing callback");
                                 }
@@ -433,12 +507,12 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
 
                                 // chain always continues with the same value
                                 Value::Furure(Box::new(value_for_chain))
-                            }))
+                            })))
                         }
 
                         // finally(callback) – always runs, ignores result, preserves chain
                         "finally" => {
-                            Value::NativeFunction(Arc::new(move |args: Vec<Value>| -> Value {
+                            Ok(Value::NativeFunction(Arc::new(move |args: Vec<Value>| -> Value {
                                 if args.is_empty() {
                                     panic!("finally(callback): missing callback");
                                 }
@@ -453,7 +527,7 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
                                 }
 
                                 Value::Furure(Box::new(value_for_chain))
-                            }))
+                            })))
                         }
 
                         other => panic!("Property '{}' not supported on Furure", other),
@@ -470,14 +544,15 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
         // ---------------------------------------------------------------------
         // Property Set: obj.prop = value
         // ---------------------------------------------------------------------
-        Expr::Set { object, name, value } => {
+        Expr::Set { object, name, value, span } => {
             let target = eval_expr(*object, env.clone());
             let val = eval_expr(*value, env);
 
             match target {
-                Value::Object { fields } => {
-                    fields.borrow_mut().insert(name, val.clone());
-                    val
+                Ok(Value::Object { fields }) => {
+                    let value = val?;
+                    fields.borrow_mut().insert(name, value.clone());
+                    Ok(value)
                 }
 
                 other => {
@@ -489,10 +564,10 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
         // ---------------------------------------------------------------------
         // Lambda
         // ---------------------------------------------------------------------
-        Expr::Lambda { params, body } => {
+        Expr::Lambda { params, body, span } => {
             let captured_env = env.clone();
 
-            Value::NativeFunction(Arc::new(move |args: Vec<Value>| -> Value {
+            Ok(Value::NativeFunction(Arc::new(move |args: Vec<Value>| -> Value {
                 let local_env = Rc::new(RefCell::new(Environment::new(Some(captured_env.clone()))));
 
                 // Bind parameters
@@ -504,40 +579,52 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
                 // Execute body
                 for stmt in &body {
                     match exec_stmt(stmt.clone(), local_env.clone()) {
-                        ExecSignal::None => {}
-                        ExecSignal::Return(v) => return v,
-                        ExecSignal::Throw(e) => return e,
+                        Ok(ExecSignal::None) => {}
+
+                        Ok(ExecSignal::Return(v)) => {
+                            return v;
+                        }
+
+                        Ok(ExecSignal::Throw(e)) => {
+                            return e;
+                        }
+
+                        Err(err) => {
+                            return Value::Error {
+                                message: err.message,
+                            };
+                        }
                     }
                 }
 
                 Value::Null
-            }))
+            })))
         }
 
         // ---------------------------------------------------------------------
         // Postfix Operators: i++, i--
         // ---------------------------------------------------------------------
-        Expr::PostIncrement { name } => {
+        Expr::PostIncrement { name, span } => {
             let current = env.borrow().get(&name, false)
                 .unwrap_or_else(|| panic!("Undefined variable '{}'", name));
 
             if let Value::Number(n) = current {
                 let new_val = Value::Number(n + 1.0);
                 env.borrow_mut().assign(&name, new_val);
-                Value::Number(n)
+                Ok(Value::Number(n))
             } else {
                 panic!("++ only allowed on numbers");
             }
         }
 
-        Expr::PostDecrement { name } => {
+        Expr::PostDecrement { name, span } => {
             let current = env.borrow().get(&name, false)
                 .unwrap_or_else(|| panic!("Undefined variable '{}'", name));
 
             if let Value::Number(n) = current {
                 let new_val = Value::Number(n - 1.0);
                 env.borrow_mut().assign(&name, new_val);
-                Value::Number(n)
+                Ok(Value::Number(n))
             } else {
                 panic!("-- only allowed on numbers");
             }
@@ -546,12 +633,13 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
         // ---------------------------------------------------------------------
         // `new` Class Construction
         // ---------------------------------------------------------------------
-        Expr::New { class_name, arguments } => {
+        Expr::New { class_name, arguments, span } => {
             // For now, treat `new Foo(a, b)` as sugar for `Foo(a, b)` and let
             // `call_value` decide how to construct instances from class values.
             let call_expr = Expr::Call {
-                callee: Box::new(Expr::Identifier(class_name)),
+                callee: Box::new(Expr::Identifier { name: class_name, span }),
                 arguments,
+                span,
             };
 
             eval_expr(call_expr, env)
@@ -560,11 +648,11 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
         // ---------------------------------------------------------------------
         // tap() Module Import
         // ---------------------------------------------------------------------
-        Expr::Tap { path } => {
+        Expr::Tap { path, span } => {
             let pval = eval_expr(*path, env);
 
             let path_str = match pval {
-                Value::String(s) => s,
+                Ok(Value::String(s)) => s,
                 other => panic!("tap() path must be a string, got {:?}", other),
             };
 
@@ -579,25 +667,30 @@ pub fn eval_expr(expr: Expr, env: Rc<RefCell<Environment>>) -> Value {
             );
         }
 
-        Expr::Logical { left, operator, right } => {
-            let left_val = eval_expr(*left, env.clone());
+        Expr::Logical { left, operator, right, span } => {
+            let left_val = eval_expr(*left, env.clone())?;
 
             match operator.lexeme.as_str() {
                 "||" => {
                     if is_truthy(&left_val) {
-                        left_val
+                        Ok(left_val)
                     } else {
                         eval_expr(*right, env)
                     }
                 }
+
                 "&&" => {
                     if !is_truthy(&left_val) {
-                        left_val
+                        Ok(left_val)
                     } else {
                         eval_expr(*right, env)
                     }
                 }
-                _ => panic!("Invalid logical operator: {}", operator.lexeme),
+
+                _ => Err(PawxError::runtime_error(
+                    format!("Invalid logical operator '{}'", operator.lexeme),
+                    span,
+                )),
             }
         }
 

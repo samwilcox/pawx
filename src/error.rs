@@ -26,17 +26,65 @@
  * ==========================================================================
  */
 
-#![allow(dead_code, unused_variables, unused_imports)]
+use crate::span::Span;
 
-#[derive(Debug)]
-pub struct RuntimeError {
+#[derive(Debug, Clone)]
+pub struct PawxError {
+    /// Stable error code (P0001, P0002, …)
+    pub code: &'static str,
+
+    /// Human-readable error message
     pub message: String,
+
+    /// Primary source location
+    pub span: Span,
+
+    /// Optional note / help text
+    pub help: Option<String>,
 }
 
-impl RuntimeError {
-    pub fn new(msg: &str) -> Self {
+impl PawxError {
+    /// Generic constructor
+    pub fn new(
+        code: &'static str,
+        message: impl Into<String>,
+        span: Span,
+    ) -> Self {
         Self {
-            message: msg.to_string(),
+            code,
+            message: message.into(),
+            span,
+            help: None,
         }
+    }
+
+    /// Runtime error (during evaluation)
+    pub fn runtime_error(
+        message: impl Into<String>,
+        span: Span,
+    ) -> Self {
+        Self::new("E_RUNTIME", message, span)
+    }
+
+    /// Type error (invalid operation / operand types)
+    pub fn type_error(
+        message: impl Into<String>,
+        span: Span,
+    ) -> Self {
+        Self::new("E_TYPE", message, span)
+    }
+
+    /// Reference error (undefined variable, property, etc.)
+    pub fn reference_error(
+        message: impl Into<String>,
+        span: Span,
+    ) -> Self {
+        Self::new("E_REFERENCE", message, span)
+    }
+
+    /// Attach a help message to the error (builder-style).
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
     }
 }

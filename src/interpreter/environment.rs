@@ -71,6 +71,7 @@ pub struct FunctionDef {
     pub body: Vec<Stmt>,
     pub return_type: Option<String>,
     pub is_async: bool,
+    pub(crate) name_span: crate::span::Span,
 }
 
 #[derive(Debug, Clone)]

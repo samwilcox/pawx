@@ -43,15 +43,18 @@
  */
 
 use std::cell::RefCell;
+use std::env::args;
 use std::rc::Rc;
 
 use crate::ast::Expr;
 use crate::interpreter::environment::{Environment, FunctionDef};
+use crate::span::Span;
 use crate::value::Value;
 
 use crate::interpreter::statements::exec_stmt;
 use crate::interpreter::expressions::eval_expr;
 use crate::interpreter::ExecSignal;
+use crate::error::PawxError;
 
 /// Executes a **constructor or class method body** using already-evaluated
 /// argument values.
@@ -76,17 +79,16 @@ fn call_method_value(
     instance: Value,
     args: Vec<Value>,
     env: Rc<RefCell<Environment>>,
-) {
+) -> Result<(), PawxError> {
     // Create a new environment for the method call
-    // This environment is lexically chained to the parent scope
     let func_env = Rc::new(RefCell::new(Environment::new(Some(env.clone()))));
 
-    // Bind `this` so the method can modify instance state
+    // Bind `this`
     func_env
         .borrow_mut()
         .define_public("this".to_string(), instance);
 
-    // Bind evaluated parameters into the local scope
+    // Bind parameters
     for (i, param) in func.params.iter().enumerate() {
         let val = args.get(i).cloned().unwrap_or(Value::Null);
         func_env
@@ -94,20 +96,25 @@ fn call_method_value(
             .define_public(param.name.clone(), val);
     }
 
-    // Execute constructor / method body
+    // Execute body
     for stmt in func.body {
-        match exec_stmt(stmt, func_env.clone()) {
+        match exec_stmt(stmt, func_env.clone())? {
             ExecSignal::None => {}
 
             // Constructors discard return values
             ExecSignal::Return(_) => break,
 
-            // Hard-stop on thrown errors
-            ExecSignal::Throw(e) => {
-                panic!("Constructor threw error: {:?}", e);
+            // Language-level throw → propagate upward
+            ExecSignal::Throw(value) => {
+                return Err(PawxError::runtime_error(
+                    format!("Constructor threw error: {}", value.stringify()),
+                    Span::new(0, 0),
+                ));
             }
         }
     }
+
+    Ok(())
 }
 
 /// Invokes a **standard instance method** using unevaluated expression
@@ -130,7 +137,7 @@ fn call_method(
     instance: Value,
     args: Vec<Expr>,
     env: Rc<RefCell<Environment>>,
-) -> Value {
+) -> Result<Value, PawxError> {
     // Create method execution scope
     let func_env = Rc::new(RefCell::new(Environment::new(Some(env))));
 
@@ -140,7 +147,7 @@ fn call_method(
     // Bind parameters (evaluated lazily from expressions)
     for (i, param) in func.params.iter().enumerate() {
         let val = if i < args.len() {
-            eval_expr(args[i].clone(), func_env.clone())
+            eval_expr(args[i].clone(), func_env.clone())?
         } else {
             Value::Null
         };
@@ -152,12 +159,12 @@ fn call_method(
 
     // Execute body and return on first `return`
     for stmt in func.body {
-        if let ExecSignal::Return(v) = exec_stmt(stmt, func_env.clone()) {
-            return v;
+        if let Ok(ExecSignal::Return(v)) = exec_stmt(stmt, func_env.clone()) {
+            return Ok(v);
         }
     }
 
-    Value::Null
+    Ok(Value::Null)
 }
 
 /// Executes a **callable runtime value**, such as native functions.
@@ -172,24 +179,19 @@ pub fn call_value(
     callee_val: Value,
     arguments: Vec<Expr>,
     env: Rc<RefCell<Environment>>,
-) -> Value {
+) -> Result<Value, PawxError> {
     // Evaluate all argument expressions eagerly
     let mut args = Vec::new();
     for arg in arguments {
-        args.push(eval_expr(arg, env.clone()));
+        args.push(eval_expr(arg, env.clone())?);
     }
 
     match callee_val {
         // Native functions work as usual
-        Value::NativeFunction(f) => f(args),
+        Value::NativeFunction(f) => Ok(f(args)),
 
         // Allow non-function values to pass through safely (for chaining)
-        other => {
-            // This fixes:
-            //   res.status(200).json({...});
-            // where `.json()` returns an object and should NOT be called again.
-            other
-        }
+        other => Ok(other),
     }
 }
 
@@ -212,37 +214,44 @@ pub fn call_user_function(
     func: FunctionDef,
     arg_vals: Vec<Value>,
     env: Rc<RefCell<Environment>>,
-) -> Value {
+) -> Result<Value, PawxError> {
     // Create function-local scope chained to the outer environment
-    let func_env = Rc::new(RefCell::new(Environment::new(Some(env.clone()))));
+    let func_env = Rc::new(RefCell::new(Environment::new(Some(env))));
 
-    // Bind parameters with default support
+    // Bind parameters (arguments already evaluated!)
     for (i, param) in func.params.iter().enumerate() {
-        let value = if i < arg_vals.len() {
+        let val = if i < arg_vals.len() {
             arg_vals[i].clone()
         } else if let Some(default_expr) = &param.default {
-            eval_expr(default_expr.clone(), func_env.clone())
+            // Defaults are expressions → must be evaluated
+            eval_expr(default_expr.clone(), func_env.clone())?
         } else {
             Value::Null
         };
 
         func_env
             .borrow_mut()
-            .define_public(param.name.clone(), value);
+            .define_public(param.name.clone(), val);
     }
 
     // Execute function body
     for stmt in func.body {
-        match exec_stmt(stmt, func_env.clone()) {
+        match exec_stmt(stmt, func_env.clone())? {
             ExecSignal::None => {}
 
-            // Hard return
-            ExecSignal::Return(v) => return v,
+            ExecSignal::Return(value) => {
+                return Ok(value);
+            }
 
-            // Convert thrown value into returned error object
-            ExecSignal::Throw(e) => return e,
+            ExecSignal::Throw(value) => {
+                return Err(PawxError::runtime_error(
+                    format!("Uncaught exception: {}", value.stringify()),
+                    Span::new(0, 0),
+                ));
+            }
         }
     }
 
-    Value::Null
+    // No explicit return → null
+    Ok(Value::Null)
 }

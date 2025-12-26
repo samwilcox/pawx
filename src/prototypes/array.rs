@@ -102,6 +102,11 @@ pub fn create_array_proto() -> HashMap<String, Value> {
         Value::NativeFunction(Arc::new(array_reduce_right)),
     );
 
+    proto.insert(
+        "toString".to_string(),
+        Value::NativeFunction(Arc::new(array_to_string)),
+    );
+
     proto
 }
 
@@ -538,7 +543,7 @@ fn array_includes(args: Vec<Value>) -> Value {
     let target = args.get(1).cloned().unwrap_or(Value::Null);
 
     for v in array.iter() {
-        if Value::pawx_equals(v, &target) {
+        if Value::equals_strict(v, &target) {
             return Value::Bool(true);
         }
     }
@@ -734,4 +739,20 @@ fn array_sort(args: Vec<Value>) -> Value {
         values: array_rc.clone(),
         proto: create_array_proto(),
     }
+}
+
+fn array_to_string(args: Vec<Value>) -> Value {
+    let array = match &args[0] {
+        Value::Array { values, .. } => values.borrow(),
+        _ => panic!("toString() must be called on an array"),
+    };
+
+    // JS behavior: join with commas, no brackets
+    let inner = array
+        .iter()
+        .map(|v| v.stringify())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    Value::String(inner)
 }

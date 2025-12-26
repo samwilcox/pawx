@@ -47,6 +47,7 @@ use crate::value::Value;
 use crate::interpreter::calls::call_value;
 use crate::prototypes::array::create_array_proto;
 use crate::ast::Expr;
+use crate::span::Span;
 
 use serde_json;
 
@@ -118,7 +119,6 @@ fn server_bind(port: u16, handler: Value) -> Value {
 
         let raw_request = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
 
-        // ✅ NOW RETURNS (req, res, response_body)
         let (req_val, res_val, response_body) = build_req_res(&raw_request, peer_ip);
 
         let handler_env = Rc::new(RefCell::new(
@@ -128,7 +128,16 @@ fn server_bind(port: u16, handler: Value) -> Value {
         // Call handler(req, res) — we IGNORE whatever it returns.
         let _ = call_value(
             handler.clone(),
-            vec![Expr::Literal(req_val), Expr::Literal(res_val)],
+            vec![
+                Expr::Literal {
+                    value: req_val,
+                    span: Span { line: 0, column: 0 },
+                },
+                Expr::Literal {
+                    value: res_val,
+                    span: Span { line: 0, column: 0 },
+                },
+            ],
             handler_env,
         );
 

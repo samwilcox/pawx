@@ -38,7 +38,9 @@
  */
 
 use crate::ast::{ClassMember, Expr, Param};
+use crate::error::PawxError;
 use crate::interpreter::environment::{Environment, FunctionDef};
+use crate::span::Span;
 use crate::value::Value;
 use crate::interpreter::expressions::{eval_expr};
 use crate::interpreter::statements::{exec_stmt, ExecSignal};
@@ -70,7 +72,7 @@ pub fn build_class_value(
     name: String,
     members: Vec<ClassMember>,
     env: Rc<RefCell<Environment>>,
-) -> Value {
+) -> Result<Value, PawxError> {
     let mut methods  = HashMap::new();
     let mut getters  = HashMap::new();
     let mut setters  = HashMap::new();
@@ -82,9 +84,10 @@ pub fn build_class_value(
                 let val = if let Some(expr) = value {
                     eval_expr(expr, env.clone())
                 } else {
-                    Value::Null
+                    Ok(Value::Null)
                 };
-                fields.insert(name, val);
+
+                fields.insert(name, val?);
             }
 
             ClassMember::Method { name, params, body, .. } => {
@@ -93,6 +96,7 @@ pub fn build_class_value(
                     body,
                     return_type: None,
                     is_async: false,
+                    name_span: Span::new(0, 0),
                 };
                 methods.insert(name, func);
             }
@@ -103,6 +107,7 @@ pub fn build_class_value(
                     body,
                     return_type: None,
                     is_async: false,
+                    name_span: Span::new(0, 0),
                 };
                 getters.insert(name, func);
             }
@@ -117,6 +122,7 @@ pub fn build_class_value(
                     body,
                     return_type: None,
                     is_async: false,
+                    name_span: Span::new(0, 0),
                 };
                 setters.insert(name, func);
             }
@@ -125,13 +131,13 @@ pub fn build_class_value(
         }
     }
 
-    Value::Class {
+    Ok(Value::Class {
         name,
         methods,
         getters,
         setters,
         fields,
-    }
+    })
 }
 
 /// ==========================================================================
@@ -156,29 +162,31 @@ pub fn construct_instance(
     class_name: String,
     arguments: Vec<Expr>,
     env: Rc<RefCell<Environment>>,
-) -> Value {
+) -> Result<Value, PawxError> {
     let class_val = env
         .borrow()
         .get(&class_name, false)
-        .unwrap_or_else(|| panic!("Undefined class '{}'", class_name));
+        .ok_or_else(|| PawxError::runtime_error(
+            format!("Undefined class '{}'", class_name),
+            Span::new(0, 0),
+        ))?;
 
     let (methods, getters, setters, fields) = match &class_val {
-        Value::Class {
-            methods,
-            getters,
-            setters,
-            fields,
-            ..
-        } => (
+        Value::Class { methods, getters, setters, fields, .. } => (
             methods.clone(),
             getters.clone(),
             setters.clone(),
             fields.clone(),
         ),
-        _ => panic!("'{}' is not a class", class_name),
+        _ => {
+            return Err(PawxError::runtime_error(
+                format!("'{}' is not a class", class_name),
+                Span::new(0, 0),
+            ));
+        }
     };
 
-    let mut instance = Value::Instance {
+    let instance = Value::Instance {
         class_name: class_name.clone(),
         fields: Rc::new(RefCell::new(fields)),
         methods: methods.clone(),
@@ -186,21 +194,17 @@ pub fn construct_instance(
         setters: setters.clone(),
     };
 
+    // build Vec<Value> (NOT Vec<Result<...>>)
     let mut arg_values = Vec::new();
     for arg in arguments {
-        arg_values.push(eval_expr(arg, env.clone()));
+        arg_values.push(eval_expr(arg, env.clone())?);
     }
 
     if let Some(constructor) = methods.get("new") {
-        call_method_value(
-            constructor.clone(),
-            instance.clone(),
-            arg_values,
-            env.clone(),
-        );
+        call_method_value(constructor.clone(), instance.clone(), arg_values, env.clone())?;
     }
 
-    instance
+    Ok(instance)
 }
 
 /// ==========================================================================
@@ -225,7 +229,7 @@ pub fn get_instance_property(
     instance: Value,
     name: String,
     env: Rc<RefCell<Environment>>,
-) -> Value {
+) -> Result<Value, PawxError> {
     match instance {
         Value::Instance {
             fields,
@@ -234,6 +238,7 @@ pub fn get_instance_property(
             setters,
             ..
         } => {
+            // Getter
             if let Some(getter) = getters.get(&name) {
                 return call_method(
                     getter.clone(),
@@ -249,10 +254,12 @@ pub fn get_instance_property(
                 );
             }
 
+            // Direct field
             if let Some(val) = fields.borrow().get(&name) {
-                return val.clone();
+                return Ok(val.clone());
             }
 
+            // Method → return a bound native function
             if let Some(method) = methods.get(&name) {
                 let method = method.clone();
                 let instance = Value::Instance {
@@ -263,15 +270,31 @@ pub fn get_instance_property(
                     setters,
                 };
 
-                return Value::NativeFunction(std::sync::Arc::new(
-                    move |_args| call_method(method.clone(), instance.clone(), vec![], env.clone()),
-                ));
+                return Ok(Value::NativeFunction(std::sync::Arc::new(
+                    move |_args| {
+                        match call_method(
+                            method.clone(),
+                            instance.clone(),
+                            vec![],
+                            env.clone(),
+                        ) {
+                            Ok(v) => v,
+                            Err(e) => Value::Error { message: e.message },
+                        }
+                    },
+                )));
             }
 
-            panic!("Undefined property '{}' on instance", name);
+            Err(PawxError::runtime_error(
+                format!("Undefined property '{}' on instance", name),
+                Span::new(0, 0),
+            ))
         }
 
-        _ => panic!("Property access only valid on class instances"),
+        _ => Err(PawxError::runtime_error(
+            "Property access only valid on class instances".to_string(),
+            Span::new(0, 0),
+        )),
     }
 }
 
@@ -333,7 +356,7 @@ pub fn call_method_value(
     instance: Value,
     args: Vec<Value>,
     env: Rc<RefCell<Environment>>,
-) {
+) -> Result<Value, PawxError> {
     let func_env = Rc::new(RefCell::new(Environment::new(Some(env))));
 
     func_env
@@ -348,12 +371,19 @@ pub fn call_method_value(
     }
 
     for stmt in func.body {
-        match exec_stmt(stmt, func_env.clone()) {
+        match exec_stmt(stmt, func_env.clone())? {
             ExecSignal::None => {}
-            ExecSignal::Return(_) => break,
-            ExecSignal::Throw(e) => panic!("Method threw error: {:?}", e),
+            ExecSignal::Return(value) => return Ok(value),
+            ExecSignal::Throw(value) => {
+                return Err(PawxError::runtime_error(
+                    format!("Uncaught exception: {}", value.stringify()),
+                    Span::new(0, 0), // until you plumb real stmt spans
+                ));
+            }
         }
     }
+
+    Ok(Value::Null)
 }
 
 /// Executes a class method and returns the return value.
@@ -362,30 +392,44 @@ pub fn call_method(
     instance: Value,
     args: Vec<Expr>,
     env: Rc<RefCell<Environment>>,
-) -> Value {
+) -> Result<Value, PawxError> {
     let func_env = Rc::new(RefCell::new(Environment::new(Some(env))));
 
+    // Bind `this`
     func_env
         .borrow_mut()
         .define_public("this".to_string(), instance);
 
+    // Bind parameters
     for (i, param) in func.params.iter().enumerate() {
         let val = if i < args.len() {
             eval_expr(args[i].clone(), func_env.clone())
         } else {
-            Value::Null
-        };
+            Ok(Value::Null)
+        }?;
 
         func_env
             .borrow_mut()
             .define_public(param.name.clone(), val);
     }
 
+    // Execute body
     for stmt in func.body {
-        if let ExecSignal::Return(v) = exec_stmt(stmt, func_env.clone()) {
-            return v;
+        match exec_stmt(stmt, func_env.clone())? {
+            ExecSignal::None => {}
+
+            ExecSignal::Return(v) => {
+                return Ok(v);
+            }
+
+            ExecSignal::Throw(v) => {
+                return Err(PawxError::runtime_error(
+                    format!("Uncaught exception: {}", v.stringify()),
+                    Span::new(0, 0),
+                ));
+            }
         }
     }
 
-    Value::Null
+    Ok(Value::Null)
 }
